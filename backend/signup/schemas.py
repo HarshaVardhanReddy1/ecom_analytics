@@ -74,3 +74,37 @@ class SignupRequest(BaseModel):
 class SignupResponse(BaseModel):
     user_id: str   # UUID of the newly created user
     message: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return validate_email(v)
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    user: UserResponse
+
+
+class VerifyEmailRequest(BaseModel):
+    user_id: str
+    code: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return validate_email(v)
