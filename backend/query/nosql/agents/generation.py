@@ -77,6 +77,13 @@ def generation_agent(state: dict) -> dict:
         query_text = response.content.strip()
         logger.info(f"Generated query: {query_text[:200]}")
 
+        # Check if query is unsupported
+        if query_text == "UNSUPPORTED_QUERY":
+            state["query"] = None
+            state["error"] = "Cannot generate a query for this request with the available schema"
+            logger.warning(f"Unsupported query requested: {state['question'][:100]}")
+            return state
+
         # Validate JSON by parsing it
         try:
             # Try to parse as JSON (could be filter or pipeline)
