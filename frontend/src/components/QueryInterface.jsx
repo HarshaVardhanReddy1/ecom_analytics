@@ -14,12 +14,12 @@ export default function QueryInterface({ selectedDb, onLogout }) {
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [queryMode, setQueryMode] = useState('natural') // 'natural' or 'sql'
+  const [queryMode, setQueryMode] = useState('natural') // 'natural' or 'direct'
   const messagesEndRef = useRef(null)
 
   const executeQuery = async (query, currentToken, mode = 'natural') => {
-    const endpoint = mode === 'sql' ? 'query' : 'natural-query'
-    const bodyKey = mode === 'sql' ? 'query' : 'question'
+    const endpoint = mode === 'direct' ? 'query' : 'natural-query'
+    const bodyKey = mode === 'direct' ? 'query' : 'question'
 
     const response = await fetch(`http://localhost:8000/api/databases/${selectedDb.id}/${endpoint}`, {
       method: 'POST',
@@ -61,8 +61,8 @@ export default function QueryInterface({ selectedDb, onLogout }) {
     if (selectedDb) {
       const isMongoDb = selectedDb.db_type?.toLowerCase() === 'mongodb'
       const connectionInfo = isMongoDb
-        ? `Connected to MongoDB: ${selectedDb.name}\n\nQuery Format: collection_name\n{filter_json_optional}`
-        : `Connected to database: ${selectedDb.name}\n\nYou can use natural language or SQL queries.`
+        ? `Connected to MongoDB: ${selectedDb.name}\n\nYou can now use:\n• Natural Language: Ask questions like "Get users over 25"\n• Direct Query: Use MongoDB find() or aggregation format`
+        : `Connected to ${selectedDb.db_type}: ${selectedDb.name}\n\nYou can use natural language or ${selectedDb.db_type} queries.`
 
       setMessages([
         {
@@ -72,10 +72,8 @@ export default function QueryInterface({ selectedDb, onLogout }) {
         },
       ])
 
-      // Auto-switch to SQL mode for MongoDB
-      if (isMongoDb && queryMode === 'natural') {
-        setQueryMode('sql')
-      }
+      // Default to natural language for all databases
+      setQueryMode('natural')
     }
   }, [selectedDb])
 
@@ -87,6 +85,7 @@ export default function QueryInterface({ selectedDb, onLogout }) {
       id: messages.length + 1,
       type: 'user',
       content: input,
+      mode: queryMode,
     }
 
     setMessages(prev => [...prev, userMessage])
@@ -99,10 +98,12 @@ export default function QueryInterface({ selectedDb, onLogout }) {
       const assistantMessage = {
         id: messages.length + 2,
         type: 'query_result',
-        sql: data.sql || null,
+        generatedQuery: data.sql || data.query || null,
+        queryType: data.query_type || null,
         columns: data.columns || [],
         rows: data.rows || [],
         row_count: data.row_count || 0,
+        dbType: selectedDb.db_type?.toLowerCase(),
       }
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
@@ -117,6 +118,31 @@ export default function QueryInterface({ selectedDb, onLogout }) {
     }
   }
 
+  const getQueryTypeLabel = () => {
+    const dbType = selectedDb?.db_type?.toLowerCase()
+    if (queryMode === 'natural') {
+      return 'Natural Language'
+    }
+    if (dbType === 'mongodb') {
+      return 'MongoDB Query'
+    }
+    return 'SQL Query'
+  }
+
+  const getGeneratedQueryLabel = (queryType) => {
+    if (queryType === 'mongodb') {
+      return 'Generated MongoDB Query:'
+    }
+    if (queryType === 'sql') {
+      return 'Generated SQL:'
+    }
+    const dbType = selectedDb?.db_type?.toLowerCase()
+    if (dbType === 'mongodb') {
+      return 'Generated MongoDB Query:'
+    }
+    return 'Generated SQL:'
+  }
+
   return (
     <div className="flex-1 bg-white flex flex-col">
       {/* Header */}
@@ -126,7 +152,9 @@ export default function QueryInterface({ selectedDb, onLogout }) {
             {selectedDb ? selectedDb.name : 'Database Query Assistant'}
           </h1>
           {selectedDb && (
-            <p className="text-sm text-gray-600 mt-1">Type a query to get started</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {selectedDb.db_type} • {getQueryTypeLabel() === 'Natural Language' ? 'Ask questions' : 'Write queries'}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -152,8 +180,13 @@ export default function QueryInterface({ selectedDb, onLogout }) {
             }`}
           >
             {msg.type === 'user' ? (
-              <div className="max-w-2xl px-4 py-3 rounded-lg bg-blue-600 text-white">
-                <p className="text-sm">{msg.content}</p>
+              <div className="max-w-2xl">
+                <div className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold mb-1">
+                  {msg.mode === 'natural' ? '🤖 Natural Language' : '📝 Direct Query'}
+                </div>
+                <div className="px-4 py-3 rounded-lg bg-blue-600 text-white">
+                  <p className="text-sm">{msg.content}</p>
+                </div>
               </div>
             ) : msg.type === 'error' ? (
               <div className="max-w-2xl w-full px-4 py-3 rounded-lg bg-red-100 text-red-700 border border-red-300">
@@ -162,15 +195,17 @@ export default function QueryInterface({ selectedDb, onLogout }) {
               </div>
             ) : msg.type === 'system' ? (
               <div className="max-w-2xl w-full px-4 py-3 rounded-lg bg-gray-200 text-gray-900">
-                <p className="text-sm">{msg.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
               </div>
             ) : msg.type === 'query_result' ? (
               <div className="max-w-5xl w-full space-y-3">
-                {msg.sql && (
+                {msg.generatedQuery && (
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-xs font-semibold text-gray-600 mb-2">Generated SQL:</p>
+                    <p className="text-xs font-semibold text-gray-600 mb-2">
+                      {getGeneratedQueryLabel(msg.queryType)}
+                    </p>
                     <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-                      <code>{msg.sql}</code>
+                      <code>{msg.generatedQuery}</code>
                     </pre>
                   </div>
                 )}
@@ -256,52 +291,44 @@ export default function QueryInterface({ selectedDb, onLogout }) {
         ) : (
           <div className="space-y-3">
             <div className="flex gap-2">
-              {selectedDb?.db_type?.toLowerCase() !== 'mongodb' && (
-                <button
-                  onClick={() => setQueryMode('natural')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    queryMode === 'natural'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  Natural Language
-                </button>
-              )}
               <button
-                onClick={() => setQueryMode('sql')}
+                onClick={() => setQueryMode('natural')}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  queryMode === 'sql'
+                  queryMode === 'natural'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                {selectedDb?.db_type?.toLowerCase() === 'mongodb' ? 'Query' : 'SQL'}
+                🤖 Natural Language
+              </button>
+              <button
+                onClick={() => setQueryMode('direct')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  queryMode === 'direct'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                📝 {selectedDb?.db_type?.toLowerCase() === 'mongodb' ? 'MongoDB Query' : 'SQL Query'}
               </button>
             </div>
-            {selectedDb?.db_type?.toLowerCase() === 'mongodb' && (
-              <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded">
-                <p className="font-semibold mb-1">MongoDB Query Format:</p>
-                <p>Line 1: collection_name</p>
-                <p>Line 2 (optional): JSON filter object</p>
-                <p className="mt-1 text-gray-500">Example: users</p>
-                <p className="text-gray-500">{'{\"age\": {\"$gte\": 18}}'}</p>
-              </div>
-            )}
+
             <form onSubmit={handleSubmit} className="flex gap-3">
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder={
-                  selectedDb?.db_type?.toLowerCase() === 'mongodb'
-                    ? 'collection_name\n{"filter": "value"}'
-                    : queryMode === 'sql'
-                    ? 'Enter SQL query...'
-                    : 'Ask a question about your data...'
+                  queryMode === 'natural'
+                    ? selectedDb?.db_type?.toLowerCase() === 'mongodb'
+                      ? 'Ask a question like "Get users over 25"...'
+                      : 'Ask a question about your data...'
+                    : selectedDb?.db_type?.toLowerCase() === 'mongodb'
+                    ? `collection_name\\n{"filter": "value"}`
+                    : 'Enter SQL query...'
                 }
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 disabled={loading}
-                rows={selectedDb?.db_type?.toLowerCase() === 'mongodb' ? 3 : 1}
+                rows={queryMode === 'direct' && selectedDb?.db_type?.toLowerCase() === 'mongodb' ? 3 : 1}
               />
               <button
                 type="submit"
