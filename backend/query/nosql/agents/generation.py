@@ -55,7 +55,13 @@ def generation_agent(state: dict) -> dict:
 
     try:
         # Handle special administrative queries
-        if "list" in question and "collection" in question:
+        collection_keywords = ["collection", "collections", "table", "tables"]
+        action_keywords = ["list", "show", "get", "provide", "what", "how many"]
+
+        is_collection_query = any(keyword in question for keyword in collection_keywords)
+        is_listing_action = any(keyword in question for keyword in action_keywords)
+
+        if is_collection_query and is_listing_action:
             db = client[database_name]
             collections = db.list_collection_names()
             state["query"] = None
