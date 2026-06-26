@@ -41,6 +41,7 @@ def generation_agent(state: dict) -> dict:
     """Generate MongoDB query from natural language question."""
     client = state.get("client")
     database_name = state.get("database_name")
+    question = state.get("question", "").lower()
 
     if not client:
         state["query"] = None
@@ -53,6 +54,20 @@ def generation_agent(state: dict) -> dict:
         return state
 
     try:
+        # Handle special administrative queries
+        if "list" in question and "collection" in question:
+            db = client[database_name]
+            collections = db.list_collection_names()
+            state["query"] = None
+            state["query_type"] = "administrative"
+            state["admin_result"] = {
+                "columns": ["collection_name"],
+                "rows": [{"collection_name": name} for name in collections],
+                "row_count": len(collections),
+            }
+            logger.info(f"Listed {len(collections)} collections")
+            return state
+
         schema = _get_mongodb_schema(client, database_name)
 
         # Get system prompt from state (stored in database)
