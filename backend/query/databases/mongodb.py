@@ -25,9 +25,13 @@ def create_mongodb_connection(host: str, port: int, username: str, password: str
     try:
         encoded_user = quote_plus(username)
         encoded_password = quote_plus(password)
-        mongo_url = f"mongodb://{encoded_user}:{encoded_password}@{host}:{port}/{database_name}"
-        logger.debug(f"MongoDB connection URL: mongodb://{username}:***@{host}:{port}/{database_name}")
-        client = pymongo.MongoClient(mongo_url)
+        # Include authSource=admin for authentication - most MongoDB setups authenticate against admin database
+        mongo_url = f"mongodb://{encoded_user}:{encoded_password}@{host}:{port}/{database_name}?authSource=admin&serverSelectionTimeoutMS=5000&connectTimeoutMS=5000"
+        logger.debug(f"MongoDB connection URL: mongodb://{username}:***@{host}:{port}/{database_name}?authSource=admin")
+        client = pymongo.MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
+        # Verify connection by running a simple command
+        client.admin.command('ping')
+        logger.info(f"Successfully connected to MongoDB at {host}:{port}")
         return client
     except Exception as e:
         logger.error(f"Failed to create MongoDB connection: {str(e)}", exc_info=True)
